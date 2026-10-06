@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import weakref
+
 import anyio
 import mcp.types as types
 from mcp.server.lowlevel import Server
@@ -16,6 +18,8 @@ from .contract import (
     read_retain,
 )
 from .provider import Provider
+
+FORGET_TOOL = "memory_forget"  # not in rung-memory/1: an ordinary agent tool
 
 _OBJECT = {"type": "object"}
 
@@ -43,6 +47,18 @@ TOOLS = [
             "required": ["scope", "observation"],
         },
     ),
+    types.Tool(
+        name=FORGET_TOOL,
+        description=(
+            "Forget one record from long-term memory, by the id a recalled record carries. "
+            "Deletes it for good."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+        },
+    ),
 ]
 
 
@@ -50,6 +66,7 @@ class ProviderServer(Server):
     def __init__(self, provider: Provider) -> None:
         super().__init__("rung-memory-prospecta", version=__version__)
         self.provider = provider
+        self.bound: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()  # session -> scope
 
     def create_initialization_options(self, notification_options=None, experimental_capabilities=None):
         caps = dict(experimental_capabilities or {})
@@ -66,12 +83,23 @@ def build(provider: Provider) -> ProviderServer:
 
     @server.call_tool(validate_input=False)
     async def call_tool(name: str, arguments: dict):
+        session = server.request_context.session
         try:
             if name == RECALL_TOOL:
                 call = read_recall(arguments, provider.settings.budget)
+                server.bound[session] = call.scope
                 return await anyio.to_thread.run_sync(provider.recall, call)
             if name == RETAIN_TOOL:
-                return await anyio.to_thread.run_sync(provider.retain, read_retain(arguments))
+                call = read_retain(arguments)
+                server.bound[session] = call.scope
+                return await anyio.to_thread.run_sync(provider.retain, call)
+            if name == FORGET_TOOL:
+                # Agent tools get no scope from rung: use the scope of this session's latest hook.
+                scope = server.bound.get(session)
+                if scope is None or not isinstance(arguments.get("id"), str):
+                    return _error("memory_forget: needs a recalled record id and a session that has recalled")
+                out = await anyio.to_thread.run_sync(provider.forget, scope, arguments["id"])
+                return out
             return _error(f"unknown tool {name}")
         except ContractError as e:
             return _error(f"{name}: {e}")

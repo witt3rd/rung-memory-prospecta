@@ -17,7 +17,11 @@ def test_marker_tools_retain_and_recall(http_server):
                 "retain": True,
                 "budget": {"max_records": 5, "max_chars": 4000, "max_cost_usd": 0.02},
             }
-            assert {t.name for t in (await s.list_tools()).tools} == {RECALL_TOOL, RETAIN_TOOL}
+            assert {t.name for t in (await s.list_tools()).tools} == {
+                RECALL_TOOL,
+                RETAIN_TOOL,
+                "memory_forget",
+            }
             kept = await s.call_tool(
                 RETAIN_TOOL,
                 {"scope": "m1", "observation": {"kind": "note", "text": NOTE, "attrs": {"session": "a"}}},
@@ -25,6 +29,10 @@ def test_marker_tools_retain_and_recall(http_server):
             assert not kept.isError and kept.structuredContent["status"] == "stored"
             got = await s.call_tool(RECALL_TOOL, {"scope": "m1", "prompt": "deploy branch", "context": []})
             assert [x["text"] for x in got.structuredContent["records"]] == [NOTE]
+            gone = await s.call_tool("memory_forget", {"id": got.structuredContent["records"][0]["id"]})
+            assert gone.structuredContent == {"forgotten": 1}
+            again = await s.call_tool(RECALL_TOOL, {"scope": "m1", "prompt": "deploy branch"})
+            assert again.structuredContent["records"] == []
             other = await s.call_tool(RECALL_TOOL, {"scope": "m2", "prompt": "deploy branch"})
             assert other.structuredContent["records"] == []
             bad = await s.call_tool(RETAIN_TOOL, {"scope": "m1", "observation": {"kind": "x"}})

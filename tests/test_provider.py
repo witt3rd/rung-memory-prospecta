@@ -50,3 +50,12 @@ def test_same_text_twice_is_one_record(provider):
 
 def test_empty_observation_is_declined(provider):
     assert retain(provider, "s-e", "   ")["status"] == "declined"
+
+
+def test_forget_removes_one_record_in_its_scope_only(provider):
+    a = retain(provider, "s-f1", NOTE)["id"]
+    retain(provider, "s-f2", NOTE)
+    assert provider.forget("s-f2", a) == {"forgotten": 0}  # another scope's id: nothing
+    assert provider.forget("s-f1", a) == {"forgotten": 1}
+    assert recall(provider, "s-f1", "deploy branch")["records"] == []
+    assert len(recall(provider, "s-f2", "deploy branch")["records"]) == 1

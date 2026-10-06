@@ -16,7 +16,9 @@ comparison point for richer providers, not a hybrid.
 | `rung_memory_recall` | `formulate_queries(prompt, context)` (read-side LLM) then `Memory.recall(queries)`. Hits are collapsed to one record per document (best score), ranked, and cut whole-record to the budget. A record is `{id, text (the original body), observed_at, attrs, score}`; `left_out` counts what the budget dropped |
 | `calls`, `cost_usd` | every model and embedder call in the hook, costed by LiteLLM when it knows the price |
 
-An unknown scope recalls nothing and creates nothing. The server offers only the two hook tools (no agent tools).
+| *(no contract verb)* `memory_forget(id)` | `Memory.remove_documents` for that record. `rung-memory/1` has no delete concept, so this is an ordinary **agent tool**, not a hook: rung gives it to the agent unchanged. It acts on the scope of its session's latest hook call (rung sends agent tools no scope) |
+
+An unknown scope recalls nothing and creates nothing. The repo is deliberately thin: no retrieval logic of its own. Hybrid retrieval belongs inside Prospecta.
 
 ## Run it
 

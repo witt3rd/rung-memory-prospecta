@@ -131,6 +131,19 @@ class Provider:
             "calls": max(self.meter.calls, 1),
         }
 
+    def forget(self, scope: str, document_id: str) -> dict:
+        """Delete one record (a Prospecta document) from the scope's bank."""
+        mem = self._memory(scope, create=False)
+        if mem is None:
+            return {"forgotten": 0}
+        with mem._pool.cursor() as cur:
+            cur.execute(
+                "SELECT source FROM documents WHERE bank_id = %s AND id::text = %s",
+                (bank_id(scope), document_id),
+            )
+            row = cur.fetchone()
+        return {"forgotten": mem.remove_documents([row[0]]) if row else 0}
+
     def close(self) -> None:
         for m in self._memories.values():
             m.close()

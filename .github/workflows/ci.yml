@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/guard.py
+
+  test:
+    name: lint, tests, rung --memory-check
+    runs-on: ubuntu-latest
+    services:
+      pg:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: rmp
+          POSTGRES_PASSWORD: rmp
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rmp" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      PROSPECTA_TEST_DATABASE_URL: postgresql://rmp:rmp@127.0.0.1:5432/postgres
+      RUNG_TAG: v0.1.13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: rung-agent (cached build of the pinned rung tag)
+        uses: actions/cache@v4
+        id: rung
+        with:
+          path: ~/.cargo-rung
+          key: rung-agent-${{ env.RUNG_TAG }}
+      - name: build rung-agent
+        if: steps.rung.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/witt3rd/rung --tag "$RUNG_TAG" --locked --root ~/.cargo-rung rung-agent
+      - run: echo "$HOME/.cargo-rung/bin" >> "$GITHUB_PATH"
+      - run: pip install -e '.[dev]'
+      - run: ruff check . && ruff format --check .
+      - name: tests (rung-agent --memory-check must run, not skip)
+        run: |
+          rung-agent --memory-check baseline >/dev/null
+          pytest -rs

@@ -1,0 +1,24 @@
+# A scratch pgvector for local development and the conformance run. Nothing else:
+# no volume (data is gone with the container), loopback only.
+#
+#   docker compose -f docker/compose.yml up -d --wait
+#   export PROSPECTA_TEST_DATABASE_URL=postgresql://rmp:rmp@127.0.0.1:55432/postgres
+#   docker compose -f docker/compose.yml down
+name: ${RMP_COMPOSE_PROJECT:-rung-memory-prospecta}
+services:
+  pg:
+    image: pgvector/pgvector:pg16
+    container_name: ${RMP_PG_NAME:-rung-memory-prospecta-pg}
+    environment:
+      POSTGRES_USER: rmp
+      POSTGRES_PASSWORD: rmp
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:${RMP_PG_PORT:-55432}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rmp"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

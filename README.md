@@ -18,6 +18,11 @@ comparison point for richer providers, not a hybrid.
 
 | *(no contract verb)* `memory_forget(id)` | `Memory.remove_documents` for that record. `rung-memory/1` has no delete concept, so this is an ordinary **agent tool**, not a hook: rung gives it to the agent unchanged. It acts on the scope of its session's latest hook call (rung sends agent tools no scope) |
 
+| *(no contract verb)* `memory_search(query, depth)` | `Memory.search(query, depth=…)`. `depth` is `standard` (default) or `deep`; the tool description tells the agent to use `deep` for discovery questions (everything about X, all the …, every time …, lists and sets). Agent tool, bound to the session's latest hook scope |
+| *(no contract verb)* `memory_gather(question, entity, aliases?, depth)` | `Memory.recall_mapreduce(…, depth=…)` (default `deep`) for set questions: a cited merged list, cut to the tool-result budget |
+
+The automatic `rung_memory_recall` hook always passes `depth="standard"`. `depth` is a pure pass-through: its meaning (rerank pool cut) lives in Prospecta, see its `docs/recall-stages.md` "Recall depth".
+
 An unknown scope recalls nothing and creates nothing. The repo is deliberately thin: no retrieval logic of its own. Hybrid retrieval belongs inside Prospecta.
 
 ## Run it

@@ -110,25 +110,63 @@ class Provider:
         left_out = 0
         if mem is not None and call.prompt.strip():
             queries = mem.formulate_queries(call.prompt, context="\n".join(call.context) or None)
-            hits = mem.recall(queries, limit=call.budget.max_records * 2)
-            best: dict[str, dict] = {}
-            for h in hits:  # one record per document: its best-scoring item
-                if h.document_id not in best or h.score > best[h.document_id]["score"]:
-                    meta = h.metadata or {}
-                    best[h.document_id] = {
-                        "id": h.document_id,
-                        "text": h.original_chunk,
-                        "observed_at": meta.get("observed_at", ""),
-                        "attrs": meta.get("attrs", {}),
-                        "score": h.score,
-                    }
-            ranked = sorted(best.values(), key=lambda r: r["score"], reverse=True)
-            records, left_out = fit(ranked, call.budget)
+            # Automatic per-turn recall is always `standard` (Prospecta's default, passed explicitly).
+            hits = mem.recall(queries, limit=call.budget.max_records * 2, depth="standard")
+            records, left_out = self._fit(hits, call.budget)
         return {
             "records": records,
             "left_out": left_out,
             "cost_usd": self.meter.cost,
             "calls": max(self.meter.calls, 1),
+        }
+
+    @staticmethod
+    def _fit(hits, budget: Budget) -> tuple[list[dict], int]:
+        best: dict[str, dict] = {}
+        for h in hits:  # one record per document: its best-scoring item
+            if h.document_id not in best or h.score > best[h.document_id]["score"]:
+                meta = h.metadata or {}
+                best[h.document_id] = {
+                    "id": h.document_id,
+                    "text": h.original_chunk,
+                    "observed_at": meta.get("observed_at", ""),
+                    "attrs": meta.get("attrs", {}),
+                    "score": h.score,
+                }
+        return fit(sorted(best.values(), key=lambda r: r["score"], reverse=True), budget)
+
+    def search(self, scope: str, query: str, depth: str = "standard", budget: Budget | None = None) -> dict:
+        """Agent tool: Memory.search with the caller's `depth` passed straight through."""
+        budget = budget or self.settings.budget
+        mem = self._memory(scope, create=False)
+        if mem is None or not query.strip():
+            return {"records": [], "left_out": 0}
+        hits = mem.search(query, limit=budget.max_records * 2, depth=depth)
+        records, left_out = self._fit(hits, budget)
+        return {"records": records, "left_out": left_out}
+
+    def gather(
+        self,
+        scope: str,
+        question: str,
+        entity: str,
+        aliases: list[str] | None = None,
+        depth: str = "deep",
+        budget: Budget | None = None,
+    ) -> dict:
+        """Agent tool: Memory.recall_mapreduce (the cited set answer), cut to the tool-result budget."""
+        budget = budget or self.settings.budget
+        mem = self._memory(scope, create=False)
+        if mem is None:
+            return {"synthesis": "", "citations": []}
+        res = mem.recall_mapreduce(question, entity=entity, aliases=aliases, depth=depth)
+        text = res.synthesis or ""
+        citations = list(res.citations or [])
+        cut = len(text) > budget.max_chars
+        return {
+            "synthesis": text[: budget.max_chars],
+            "citations": citations[: budget.max_records * 10],
+            "truncated": cut or len(citations) > budget.max_records * 10,
         }
 
     def forget(self, scope: str, document_id: str) -> dict:

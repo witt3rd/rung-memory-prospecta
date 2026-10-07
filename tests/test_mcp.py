@@ -21,6 +21,8 @@ def test_marker_tools_retain_and_recall(http_server):
                 RECALL_TOOL,
                 RETAIN_TOOL,
                 "memory_forget",
+                "memory_gather",
+                "memory_search",
             }
             kept = await s.call_tool(
                 RETAIN_TOOL,

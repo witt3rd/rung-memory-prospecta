@@ -9,13 +9,13 @@ description = "Prospecta as a rung memory provider: an MCP server speaking rung-
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "prospecta[defaults] @ git+https://github.com/witt3rd/prospecta@fbe5217ce52f4be7fdd07996922ee9cb8ce63778",
+    "prospecta[defaults] @ git+https://github.com/witt3rd/prospecta@e9025a7e6c7fb30e8ed39d40b22c2fb1b9fa73fa",
     "mcp>=1.30,<2",
     "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
-st = ["prospecta[embedder] @ git+https://github.com/witt3rd/prospecta@fbe5217ce52f4be7fdd07996922ee9cb8ce63778"]
+st = ["prospecta[embedder] @ git+https://github.com/witt3rd/prospecta@e9025a7e6c7fb30e8ed39d40b22c2fb1b9fa73fa"]
 dev = ["pytest>=8", "ruff>=0.6", "httpx>=0.27"]
 
 [project.scripts]

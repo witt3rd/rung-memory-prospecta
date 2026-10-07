@@ -23,6 +23,11 @@ FORGET_TOOL = "memory_forget"  # not in rung-memory/1: an ordinary agent tool
 
 _OBJECT = {"type": "object"}
 
+SEARCH_TOOL = "memory_search"
+GATHER_TOOL = "memory_gather"
+
+_DEPTH = {"type": "string", "enum": ["standard", "deep"]}
+
 TOOLS = [
     types.Tool(
         name=RECALL_TOOL,
@@ -45,6 +50,41 @@ TOOLS = [
             "type": "object",
             "properties": {"scope": {"type": "string"}, "observation": _OBJECT},
             "required": ["scope", "observation"],
+        },
+    ),
+    types.Tool(
+        name=SEARCH_TOOL,
+        description=(
+            "Search long-term memory. `depth` is 'standard' (default) or 'deep'. Use 'deep' for "
+            "discovery questions ('everything about X', 'all the ...', 'every time ...', lists and "
+            "sets): it is more complete but costs about 3x. Use 'standard' otherwise."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "depth": {**_DEPTH, "default": "standard"},
+            },
+            "required": ["query"],
+        },
+    ),
+    types.Tool(
+        name=GATHER_TOOL,
+        description=(
+            "Gather a complete, cited answer to a SET question about one entity ('all the nicknames "
+            "of X', 'every time X ...', 'list everything about X'): reads every note tied to the "
+            "entity and returns a merged, cited list. Slower and costlier than memory_search; use "
+            "it only for set/discovery questions. `depth` defaults to 'deep'."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "entity": {"type": "string"},
+                "aliases": {"type": "array", "items": {"type": "string"}},
+                "depth": {**_DEPTH, "default": "deep"},
+            },
+            "required": ["question", "entity"],
         },
     ),
     types.Tool(
@@ -93,6 +133,26 @@ def build(provider: Provider) -> ProviderServer:
                 call = read_retain(arguments)
                 server.bound[session] = call.scope
                 return await anyio.to_thread.run_sync(provider.retain, call)
+            if name in (SEARCH_TOOL, GATHER_TOOL):
+                scope = server.bound.get(session)
+                if scope is None:
+                    return _error(f"{name}: no scope: the session has not recalled yet")
+                if name == SEARCH_TOOL:
+                    if not isinstance(arguments.get("query"), str):
+                        return _error("memory_search: `query` must be a string")
+                    return await anyio.to_thread.run_sync(
+                        provider.search, scope, arguments["query"], arguments.get("depth") or "standard"
+                    )
+                if not all(isinstance(arguments.get(k), str) for k in ("question", "entity")):
+                    return _error("memory_gather: `question` and `entity` must be strings")
+                return await anyio.to_thread.run_sync(
+                    provider.gather,
+                    scope,
+                    arguments["question"],
+                    arguments["entity"],
+                    arguments.get("aliases"),
+                    arguments.get("depth") or "deep",
+                )
             if name == FORGET_TOOL:
                 # Agent tools get no scope from rung: use the scope of this session's latest hook.
                 scope = server.bound.get(session)

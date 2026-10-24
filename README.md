@@ -68,3 +68,7 @@ Live (real model) behaviour is not exercised by tests; it needs `OPENROUTER_API_
 
 Prototype: the simplest thing that passes conformance. No auth, no hardening, no stdio transport, no
 delete verb. Prospecta is pinned by commit in `pyproject.toml`.
+
+### Cost
+
+A model LiteLLM cannot price fails closed: its call raises `UnknownPrice` and the hook errors. Set `RMP_PRICE_INPUT_PER_MTOK` (and `RMP_PRICE_OUTPUT_PER_MTOK`) to price it yourself. A recall stays within the call's `max_cost_usd`: if the model step does not fit, the prompt is searched as is; if nothing fits, no records come back. A retain that does not fit the declared budget is `declined`.

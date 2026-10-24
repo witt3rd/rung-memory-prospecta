@@ -7,12 +7,14 @@ import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from prospecta._types import Query
 from prospecta.db.migrate import run_migrations
 from prospecta.memory import Memory
 
 from . import fakes
 from .contract import Budget, RecallCall, RetainCall, fit
-from .meter import Meter
+from .live import Price
+from .meter import BudgetExceeded, Meter
 
 
 def bank_id(scope: str) -> str:
@@ -26,6 +28,17 @@ class Settings:
     model: str = "openrouter/anthropic/claude-sonnet-5.5"
     embedder: str = "litellm:openai/text-embedding-3-small"
     budget: Budget = field(default_factory=Budget)
+    # For a model LiteLLM has no price for: without this its calls fail closed (see live.UnknownPrice).
+    price: Price | None = None
+
+
+def _over_budget(e: BaseException | None) -> bool:
+    """Did a BudgetExceeded cause this, however many layers wrapped it?"""
+    while e is not None:
+        if isinstance(e, BudgetExceeded):
+            return True
+        e = e.__cause__ or e.__context__
+    return False
 
 
 class Provider:
@@ -38,19 +51,29 @@ class Provider:
             else:
                 from .live import make_llm
 
-                llm = make_llm(settings.model, self.meter)
+                llm = make_llm(settings.model, self.meter, settings.price)
         if embed is None:
             if settings.embedder == "fake":
                 embed = self._fake_embed()
             else:
                 from .live import make_embed
 
-                embed = make_embed(settings.embedder, self.meter)
-        self.llm, self.embed = llm, embed
+                embed = make_embed(settings.embedder, self.meter, settings.price)
+        self.llm, self.embed = self._guard(llm), self._guard(embed)
         self.dim = len(embed(["dimension probe"])[0])
         run_migrations(settings.database_url)
         self._memories: dict[str, Memory] = {}
         self._lock = threading.Lock()
+
+    def _guard(self, fn):
+        """Refuse a paid call the hook's remaining cost budget cannot cover."""
+        est = getattr(fn, "estimate_usd", 0.0)
+
+        def guarded(*args, **kwargs):
+            self.meter.check(est)
+            return fn(*args, **kwargs)
+
+        return guarded
 
     def _fake_llm(self):
         def llm(messages, *, json_mode=False):
@@ -88,31 +111,48 @@ class Provider:
     def retain(self, call: RetainCall) -> dict:
         if not call.text.strip():
             return {"status": "declined", "reason": "nothing to retain"}
-        self.meter.reset()
+        self.meter.reset(limit=self.settings.budget.max_cost_usd)
         mem = self._memory(call.scope, create=True)
         # Same text in the same scope is the same source: Prospecta replaces it rather than conflicting.
         source = "rung:" + hashlib.sha256(call.text.encode()).hexdigest()[:16]
-        doc_id = mem.retain(
-            call.text,
-            source=source,
-            metadata={
-                "kind": call.kind,
-                "attrs": call.attrs,
-                "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            },
-        )
+        try:
+            doc_id = mem.retain(
+                call.text,
+                source=source,
+                metadata={
+                    "kind": call.kind,
+                    "attrs": call.attrs,
+                    "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                },
+            )
+        except Exception as e:
+            if not _over_budget(e):
+                raise
+            return {"status": "declined", "reason": "cost budget", "cost_usd": self.meter.cost}
         return {"status": "stored", "id": doc_id, "cost_usd": self.meter.cost}
 
     def recall(self, call: RecallCall) -> dict:
-        self.meter.reset()
+        self.meter.reset(limit=call.budget.max_cost_usd)
         mem = self._memory(call.scope, create=False)
         records: list[dict] = []
         left_out = 0
         if mem is not None and call.prompt.strip():
-            queries = mem.formulate_queries(call.prompt, context="\n".join(call.context) or None)
-            # Automatic per-turn recall is always `standard` (Prospecta's default, passed explicitly).
-            hits = mem.recall(queries, limit=call.budget.max_records * 2, depth="standard")
-            records, left_out = self._fit(hits, call.budget)
+            try:
+                try:
+                    queries = mem.formulate_queries(call.prompt, context="\n".join(call.context) or None)
+                except Exception as e:
+                    if not _over_budget(e):
+                        raise
+                    queries = [
+                        Query(text=call.prompt)
+                    ]  # the model step does not fit: search the prompt as is
+                # Automatic per-turn recall is always `standard` (Prospecta's default, passed explicitly).
+                hits = mem.recall(queries, limit=call.budget.max_records * 2, depth="standard")
+                records, left_out = self._fit(hits, call.budget)
+            except Exception as e:
+                if not _over_budget(e):
+                    raise
+                records, left_out = [], 0  # not even the embedding fits: nothing is bought
         return {
             "records": records,
             "left_out": left_out,

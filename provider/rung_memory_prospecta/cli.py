@@ -3,6 +3,9 @@
 PROSPECTA_DATABASE_URL    Postgres+pgvector URL (or DATABASE_URL)            required
 RMP_MODEL                 LiteLLM model, or `fake`   default openrouter/anthropic/claude-sonnet-5.5
 RMP_EMBEDDER              fake | st:<model> | litellm:<model>   default litellm:openai/text-embedding-3-small
+RMP_PRICE_INPUT_PER_MTOK  USD per million input tokens, for a model LiteLLM cannot price
+RMP_PRICE_OUTPUT_PER_MTOK USD per million output tokens (default 0 when the input price is set)
+                          (a model with no price from either source fails closed: its hook errors)
 RMP_MAX_COST_USD          declared per-recall cost budget       default 0.02
 OPENROUTER_API_KEY, OPENAI_API_KEY ...  read by LiteLLM from the environment, never from a file
 """
@@ -14,6 +17,7 @@ import os
 import sys
 
 from .contract import Budget
+from .live import Price
 from .provider import Provider, Settings
 
 
@@ -21,7 +25,10 @@ def settings_from_env(env=os.environ) -> Settings:
     url = env.get("PROSPECTA_DATABASE_URL") or env.get("DATABASE_URL")
     if not url:
         raise SystemExit("PROSPECTA_DATABASE_URL (or DATABASE_URL) is required")
+    pin = env.get("RMP_PRICE_INPUT_PER_MTOK")
+    price = Price(float(pin), float(env.get("RMP_PRICE_OUTPUT_PER_MTOK", "0"))) if pin else None
     return Settings(
+        price=price,
         database_url=url,
         model=env.get("RMP_MODEL", "openrouter/anthropic/claude-sonnet-5.5"),
         embedder=env.get("RMP_EMBEDDER", "litellm:openai/text-embedding-3-small"),

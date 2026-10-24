@@ -13,6 +13,7 @@ from prospecta.memory import Memory
 from . import fakes
 from .contract import Budget, RecallCall, RetainCall, fit
 from .meter import Meter
+from .questions import caused_by_bad_output, checked
 
 
 def bank_id(scope: str) -> str:
@@ -46,7 +47,7 @@ class Provider:
                 from .live import make_embed
 
                 embed = make_embed(settings.embedder, self.meter)
-        self.llm, self.embed = llm, embed
+        self.llm, self.embed = checked(llm), embed
         self.dim = len(embed(["dimension probe"])[0])
         run_migrations(settings.database_url)
         self._memories: dict[str, Memory] = {}
@@ -92,15 +93,25 @@ class Provider:
         mem = self._memory(call.scope, create=True)
         # Same text in the same scope is the same source: Prospecta replaces it rather than conflicting.
         source = "rung:" + hashlib.sha256(call.text.encode()).hexdigest()[:16]
-        doc_id = mem.retain(
-            call.text,
-            source=source,
-            metadata={
-                "kind": call.kind,
-                "attrs": call.attrs,
-                "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            },
-        )
+        try:
+            doc_id = mem.retain(
+                call.text,
+                source=source,
+                metadata={
+                    "kind": call.kind,
+                    "attrs": call.attrs,
+                    "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                },
+            )
+        except Exception as e:
+            if not caused_by_bad_output(e):
+                raise
+            # Nothing was stored: say so, rather than index a refusal or "None" as questions.
+            return {
+                "status": "declined",
+                "reason": "model gave no usable questions",
+                "cost_usd": self.meter.cost,
+            }
         return {"status": "stored", "id": doc_id, "cost_usd": self.meter.cost}
 
     def recall(self, call: RecallCall) -> dict:

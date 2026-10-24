@@ -14,7 +14,14 @@ def make_llm(model: str, meter: Meter):
             kwargs["response_format"] = {"type": "json_object"}
         resp = litellm.completion(**kwargs)
         meter.add(_cost(litellm, resp))
-        return resp.choices[0].message.content
+        msg = resp.choices[0].message
+        if getattr(msg, "refusal", None):
+            if json_mode:
+                return ""  # Prospecta falls back to searching the prompt itself
+            from .questions import BadModelOutput
+
+            raise BadModelOutput("the model refused")
+        return msg.content  # may be None: `questions.checked` deals with it
 
     return llm
 

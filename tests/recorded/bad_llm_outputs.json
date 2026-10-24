@@ -1,0 +1,27 @@
+{
+  "write_side": {
+    "none_content": null,
+    "empty": "",
+    "whitespace": "  \n\t ",
+    "refusal_plain": "I'm sorry, but I can't help with generating questions about that content.",
+    "refusal_with_question": "I cannot assist with that request. Is there something else I can help with?",
+    "statement_only": "This record describes the deploy branch policy.",
+    "json_malformed": "{\"questions\": [\"Which branch do we deploy from?\", ",
+    "json_no_list": "{\"answer\": \"release/x\"}",
+    "json_empty_list": "{\"questions\": []}",
+    "json_number": "[1, 2, 3]"
+  },
+  "write_side_ok_but_noisy": {
+    "fenced": "```\n1. Which branch do we deploy from?\n2. Who may deploy?\n```",
+    "json_list": "{\"questions\": [\"Which branch do we deploy from?\", {\"text\": \"Who may deploy?\"}]}",
+    "bulleted": "- Which branch do we deploy from?\n- Who may deploy?"
+  },
+  "read_side_json": {
+    "none_content": null,
+    "malformed": "{\"queries\": [{\"text\": \"deploy",
+    "prose": "Sure! Here are some queries.",
+    "wrong_schema": "{\"queries\": \"deploy branch\"}",
+    "empty_queries": "{\"queries\": []}",
+    "refusal": ""
+  }
+}

@@ -41,7 +41,7 @@ def make():
     import threading
 
     p._lock = threading.Lock()
-    p.meter = type("M", (), {"reset": lambda s: None, "cost": 0.0, "calls": 1})()
+    p.meter = type("M", (), {"reset": lambda s, limit=None: None, "cost": 0.0, "calls": 1})()
     return p, mem
 
 

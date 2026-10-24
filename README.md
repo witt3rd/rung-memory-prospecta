@@ -68,3 +68,9 @@ Live (real model) behaviour is not exercised by tests; it needs `OPENROUTER_API_
 
 Prototype: the simplest thing that passes conformance. No auth, no hardening, no stdio transport, no
 delete verb. Prospecta is pinned by commit in `pyproject.toml`.
+
+### Bad model output
+
+The write-side reply is checked before Prospecta indexes it (`questions.py`): None, empty, refusals, malformed JSON and replies with no question make the retain `declined` and store nothing. A bad read-side (JSON) reply falls back to searching the prompt. `tests/recorded/bad_llm_outputs.json` holds the recorded replies the unit tests use.
+
+The workflow in `docs/live-smoke.workflow.yml` (copy it to `.github/workflows/live-smoke.yml`; the bot that wrote it may not push workflow files) runs `rung-agent --memory-check` with the real model and embedder. It does nothing unless the `OPENROUTER_API_KEY` and `OPENAI_API_KEY` secrets are set; locally, set `RMP_LIVE_SMOKE=1` and run `pytest tests/test_live_smoke.py`.

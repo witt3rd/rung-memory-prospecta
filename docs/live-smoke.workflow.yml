@@ -1,0 +1,58 @@
+name: Live smoke
+
+# Opt-in: runs `rung-agent --memory-check` with the real model and embedder. It does nothing unless the
+# repository secret OPENROUTER_API_KEY (and OPENAI_API_KEY for the default embedder) is set.
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    env:
+      HAVE_KEYS: ${{ secrets.OPENROUTER_API_KEY != '' && secrets.OPENAI_API_KEY != '' }}
+    services:
+      pg:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: rmp
+          POSTGRES_PASSWORD: rmp
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rmp" --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - name: skip without keys
+        if: env.HAVE_KEYS != 'true'
+        run: echo "live smoke skipped: provider keys are not set as secrets"
+      - uses: actions/checkout@v4
+        if: env.HAVE_KEYS == 'true'
+      - uses: actions/setup-python@v5
+        if: env.HAVE_KEYS == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/cache@v4
+        if: env.HAVE_KEYS == 'true'
+        with:
+          path: ~/.cargo-rung
+          key: rung-agent-v0.1.13
+      - name: build rung-agent
+        if: env.HAVE_KEYS == 'true'
+        run: |
+          [ -x ~/.cargo-rung/bin/rung-agent ] || cargo install --git https://github.com/witt3rd/rung --tag v0.1.13 --locked --root ~/.cargo-rung rung-agent
+          echo "$HOME/.cargo-rung/bin" >> "$GITHUB_PATH"
+      - name: smoke
+        if: env.HAVE_KEYS == 'true'
+        env:
+          PROSPECTA_TEST_DATABASE_URL: postgresql://rmp:rmp@127.0.0.1:5432/postgres
+          RMP_LIVE_SMOKE: "1"
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          pip install -e '.[dev]'
+          pytest -rs tests/test_live_smoke.py

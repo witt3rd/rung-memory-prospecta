@@ -4,6 +4,9 @@ PROSPECTA_DATABASE_URL    Postgres+pgvector URL (or DATABASE_URL)            req
 RMP_MODEL                 LiteLLM model, or `fake`   default openrouter/anthropic/claude-sonnet-5.5
 RMP_EMBEDDER              fake | st:<model> | litellm:<model>   default litellm:openai/text-embedding-3-small
 RMP_MAX_COST_USD          declared per-recall cost budget       default 0.02
+RMP_LLM_TIMEOUT_SECS      deadline for one model call           default 4 (rung's hook limit is 10 s)
+RMP_EMBED_TIMEOUT_SECS    deadline for one embedding call       default 3
+RMP_NUM_RETRIES           LiteLLM retries per call              default 0
 OPENROUTER_API_KEY, OPENAI_API_KEY ...  read by LiteLLM from the environment, never from a file
 """
 
@@ -26,6 +29,9 @@ def settings_from_env(env=os.environ) -> Settings:
         model=env.get("RMP_MODEL", "openrouter/anthropic/claude-sonnet-5.5"),
         embedder=env.get("RMP_EMBEDDER", "litellm:openai/text-embedding-3-small"),
         budget=Budget(max_cost_usd=float(env.get("RMP_MAX_COST_USD", "0.02"))),
+        llm_timeout_secs=float(env.get("RMP_LLM_TIMEOUT_SECS", "4")),
+        embed_timeout_secs=float(env.get("RMP_EMBED_TIMEOUT_SECS", "3")),
+        num_retries=int(env.get("RMP_NUM_RETRIES", "0")),
     )
 
 

@@ -26,6 +26,9 @@ class Settings:
     model: str = "openrouter/anthropic/claude-sonnet-5.5"
     embedder: str = "litellm:openai/text-embedding-3-small"
     budget: Budget = field(default_factory=Budget)
+    llm_timeout_secs: float = 4.0
+    embed_timeout_secs: float = 3.0
+    num_retries: int = 0
 
 
 class Provider:
@@ -38,14 +41,16 @@ class Provider:
             else:
                 from .live import make_llm
 
-                llm = make_llm(settings.model, self.meter)
+                llm = make_llm(settings.model, self.meter, settings.llm_timeout_secs, settings.num_retries)
         if embed is None:
             if settings.embedder == "fake":
                 embed = self._fake_embed()
             else:
                 from .live import make_embed
 
-                embed = make_embed(settings.embedder, self.meter)
+                embed = make_embed(
+                    settings.embedder, self.meter, settings.embed_timeout_secs, settings.num_retries
+                )
         self.llm, self.embed = llm, embed
         self.dim = len(embed(["dimension probe"])[0])
         run_migrations(settings.database_url)
